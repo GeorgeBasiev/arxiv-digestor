@@ -1,0 +1,456 @@
+{
+  "name": "ingestor",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "hoursInterval": 6
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -128,
+        16
+      ],
+      "id": "08bb0b0b-cb8d-4454-9e36-0f06f12aea34",
+      "name": "Schedule Trigger"
+    },
+    {
+      "parameters": {
+        "url": "https://export.arxiv.org/api/query",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "search_query",
+              "value": "cat:cs.LG"
+            },
+            {
+              "name": "sortBy",
+              "value": "submittedDate"
+            },
+            {
+              "name": "sortOrder",
+              "value": "descending"
+            },
+            {
+              "name": "max_results",
+              "value": "50"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        80,
+        16
+      ],
+      "id": "08f21bbe-524e-4064-bebf-09e644d3597f",
+      "name": "HTTP Request",
+      "retryOnFail": true
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "n8n-nodes-base.xml",
+      "typeVersion": 1,
+      "position": [
+        256,
+        16
+      ],
+      "id": "23a36b31-2dd3-4e65-ae8e-4bc12372785b",
+      "name": "XML"
+    },
+    {
+      "parameters": {
+        "jsCode": "const feed = items[0].json.feed || items[0].json;\nconst entries = Array.isArray(feed.entry) ? feed.entry : (feed.entry ? [feed.entry] : []);\n\nfunction pickCat(entry){\n  const cats = entry.category;\n  if (!cats) return null;\n  const arr = Array.isArray(cats) ? cats : [cats];\n  return arr[0]?.['@_term'] || arr[0]?.term || null;\n}\n\nfunction pickLinkPdf(entry){\n  const links = entry.link;\n  if (!links) return null;\n  const arr = Array.isArray(links) ? links : [links];\n  const pdf = arr.find(l => l['@_title']==='pdf' || l['@_type']==='application/pdf');\n  return pdf ? (pdf['@_href'] || pdf.href) : null;\n}\n\nconst out = entries.map(e => {\n  const id = (e.id||'').toString();\n  const arxivId = id.split('/abs/')[1] || id;\n  const title = (e.title||'').toString().replace(/\\s+/g,' ').trim();\n  const summary = (e.summary||'').toString().replace(/\\s+/g,' ').trim();\n  const url = pickLinkPdf(e) || (e.id||'').toString();\n  const primary_category = pickCat(e);\n  const published_at = e.published ? new Date(e.published).toISOString() : null;\n  const updated_at = e.updated ? new Date(e.updated).toISOString() : published_at;\n\n  return {\n    source: 'arxiv',\n    source_id: `arxiv:${arxivId}`,\n    title,\n    abstract: summary,\n    url,\n    primary_category,\n    published_at,\n    updated_at,\n  };\n});\n\nreturn out.map(o => ({ json: o }));\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        432,
+        32
+      ],
+      "id": "4560ba7c-d3fc-492a-9417-0e7de8d51ed1",
+      "name": "Code in JavaScript"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT p.id AS paper_id\nFROM papers p\nWHERE p.published_at >= now() - interval '2 days'\n  AND NOT EXISTS (\n    SELECT 1 FROM chunks c WHERE c.paper_id = p.id\n  )\nORDER BY p.published_at DESC\nLIMIT 50;\n",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1152,
+        16
+      ],
+      "id": "50825634-310d-4dbb-9fbf-d6f7f0159c86",
+      "name": "Execute a SQL query1",
+      "credentials": {
+        "postgres": {
+          "id": "YyPYNiHBYuXNirmC",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        672,
+        96
+      ],
+      "id": "1ed4f219-cc9f-43ba-8aa7-54513d7b7330",
+      "name": "Loop Over Items"
+    },
+    {
+      "parameters": {
+        "schema": {
+          "__rl": true,
+          "mode": "list",
+          "value": "public"
+        },
+        "table": {
+          "__rl": true,
+          "value": "papers",
+          "mode": "list",
+          "cachedResultName": "papers"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": [
+            "id"
+          ],
+          "schema": [
+            {
+              "id": "id",
+              "displayName": "id",
+              "required": false,
+              "defaultMatch": true,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "source",
+              "displayName": "source",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "source_id",
+              "displayName": "source_id",
+              "required": true,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "title",
+              "displayName": "title",
+              "required": true,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "abstract",
+              "displayName": "abstract",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "url",
+              "displayName": "url",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "primary_category",
+              "displayName": "primary_category",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "published_at",
+              "displayName": "published_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "dateTime",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "updated_at",
+              "displayName": "updated_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "dateTime",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "created_at",
+              "displayName": "created_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "dateTime",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {
+          "skipOnConflict": true
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1008,
+        160
+      ],
+      "id": "fb7edd1e-9ca4-47f4-9a17-e5a66810b284",
+      "name": "Insert rows in a table",
+      "credentials": {
+        "postgres": {
+          "id": "YyPYNiHBYuXNirmC",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://langflow:7860/api/v1/run/333333?stream=false",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "input_type",
+              "value": "chat"
+            },
+            {
+              "name": "input_value",
+              "value": "={\"paper_id\": {{ $json.paper_id }}}"
+            },
+            {
+              "name": "session_id",
+              "value": "ingest-1"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1568,
+        128
+      ],
+      "id": "7921c3d9-d7f7-42e7-998d-4e1f4ba3e9f1",
+      "name": "HTTP Request1",
+      "retryOnFail": true,
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "Ton6AqMYmlscCjrY",
+          "name": "Header Auth account"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "aggregate": "aggregateAllItemData",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.aggregate",
+      "typeVersion": 1,
+      "position": [
+        896,
+        16
+      ],
+      "id": "18364fec-dab9-4226-a03c-561a8f19d2ab",
+      "name": "Aggregate"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        1392,
+        0
+      ],
+      "id": "70a102ed-417d-4bd2-8d40-764a1d3c06af",
+      "name": "Loop Over Items1"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request": {
+      "main": [
+        [
+          {
+            "node": "XML",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "XML": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Over Items": {
+      "main": [
+        [
+          {
+            "node": "Aggregate",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Insert rows in a table",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Insert rows in a table": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute a SQL query1": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aggregate": {
+      "main": [
+        [
+          {
+            "node": "Execute a SQL query1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Over Items1": {
+      "main": [
+        [],
+        [
+          {
+            "node": "HTTP Request1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request1": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "6a7013b0-97b8-4dae-b5f6-b410e7d0ffae",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "2098b1972ed5f115554948ef5089c9f1fdd62efd22af7b8f107d70a9114d68e8"
+  },
+  "id": "ja9m04dniPupD8wM",
+  "tags": []
+}
