@@ -1,4 +1,4 @@
-# Research Paper Digestor — README
+# Research Paper Digestor
 
 A reproducible, low-code stack that:
 
@@ -108,4 +108,5 @@ run **python setup_flow_ids.py**
 ### That’s it!
 
 You now have a local, reproducible AI digest system that runs **entirely on your machine**, with flows you can tweak visually in **Langflow** and orchestration in **n8n**.
+
 
